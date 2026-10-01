@@ -12,7 +12,9 @@ from datetime import date
 from pathlib import Path
 
 import anthropic
+import pillow_heif
 from dotenv import load_dotenv
+from PIL import Image
 from splitwise import Splitwise
 from splitwise.expense import Expense
 from splitwise.user import ExpenseUser
@@ -23,6 +25,7 @@ import splits
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger("bot")
+pillow_heif.register_heif_opener()
 
 MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5-5")
 CSV_PATH = Path(os.getenv("CSV_PATH", "expenses.csv"))
@@ -75,6 +78,25 @@ def parse(image_b64: str | None, mime: str | None, text: str,
     raw = next(b.text for b in r.content if b.type == "text").strip()
     raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.M).strip()
     return json.loads(raw)
+
+
+CLAUDE_IMAGE_MIMES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+
+
+def load_receipt_image(media_id: str, msg_id: str, mime_type: str) -> tuple[str, str]:
+    """Download an inbound media object and return (base64_data, mime) that
+    Claude's vision API accepts, converting HEIC/other formats to JPEG."""
+    path = Path(tempfile.gettempdir()) / f"receipt_{msg_id}"
+    wa.download_media(media_id, path)
+    data = path.read_bytes()
+    path.unlink(missing_ok=True)
+    if mime_type in CLAUDE_IMAGE_MIMES:
+        return base64.b64encode(data).decode(), mime_type
+    import io
+    img = Image.open(io.BytesIO(data)).convert("RGB")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    return base64.b64encode(buf.getvalue()).decode(), "image/jpeg"
 
 
 def canon(name: str) -> str:
@@ -170,8 +192,10 @@ def main() -> None:
     last_saved: dict[str, int] = {}
 
     for msg in wa.listen(auto_mark_read=True):
+        log.info("incoming type=%s from=%s", msg.type, msg.from_)
         sender = msg.from_
-        text = (msg.text or (msg.image.caption if msg.image else "") or "").strip()
+        caption = (msg.image or msg.document).caption if (msg.image or msg.document) else None
+        text = (msg.text or caption or "").strip()
         try:
             low = text.lower()
             if msg.type == "text" and low in ("undo", "delete last") and sender in last_saved:
@@ -194,11 +218,11 @@ def main() -> None:
                 st = pending[sender]
                 p = parse(st["image_b64"], st["mime"], text, previous=st["parsed"])
             elif msg.type == "image" and msg.image:
-                path = Path(tempfile.gettempdir()) / f"receipt_{msg.id}"
-                wa.download_media(msg.image.id, path)
-                b64 = base64.b64encode(path.read_bytes()).decode()
-                path.unlink(missing_ok=True)
-                mime = msg.image.mime_type
+                b64, mime = load_receipt_image(msg.image.id, msg.id, msg.image.mime_type)
+                p = parse(b64, mime, text)
+                st = {"image_b64": b64, "mime": mime}
+            elif msg.type == "document" and msg.document:
+                b64, mime = load_receipt_image(msg.document.id, msg.id, msg.document.mime_type)
                 p = parse(b64, mime, text)
                 st = {"image_b64": b64, "mime": mime}
             elif msg.type == "text" and text:

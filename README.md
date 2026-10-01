@@ -1,8 +1,14 @@
 # WhatsApp to Splitwise bot
 
-Send a receipt photo (or a text like "gas $50") to your WhatsApp agent chat. The bot reads it
+Send a receipt (or a text like "gas $50") to your WhatsApp agent chat. The bot reads it
 with Claude, works out who owes what, shows a breakdown, and saves to Splitwise after you reply **Y**.
 Every saved expense is also appended to `expenses.csv`.
+
+**Send receipts as a Document, not a Photo.** In this beta, WhatsApp's agent platform does not
+deliver inline Photo/Camera attachments to the bot at all (confirmed: they never reach
+`wa.listen()`), while Document attachments are delivered normally. In WhatsApp, use the
+attachment icon > **Document** > pick the photo from your gallery. HEIC and other formats are
+converted automatically.
 
 ## Setup
 1. Python 3.10+. Then: `pip install -r requirements.txt`
@@ -19,8 +25,8 @@ Every saved expense is also appended to `expenses.csv`.
 | You send | Result |
 |---|---|
 | `gas $50` | Equal split across all 5, you paid |
-| Receipt photo | Equal split of the total |
-| Receipt photo + "I had pasta, Vijay and Guhan pizza, rest equal" | Itemized, tax and tip proportional |
+| Receipt (as Document) | Equal split of the total |
+| Receipt (as Document) + "I had pasta, Vijay and Guhan pizza, rest equal" | Itemized, tax and tip proportional |
 | `Y` | Save to Splitwise and CSV |
 | "Aravind didn't have dessert" | Recalculates and asks again |
 | `N` | Cancel |

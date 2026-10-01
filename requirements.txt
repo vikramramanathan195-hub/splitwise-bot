@@ -2,3 +2,5 @@ whatsapp-agent
 splitwise
 anthropic
 python-dotenv
+pillow
+pillow-heif
