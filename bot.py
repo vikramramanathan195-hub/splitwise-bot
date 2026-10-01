@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import tempfile
+import time
 from datetime import date
 from pathlib import Path
 
@@ -191,6 +192,18 @@ def main() -> None:
     pending: dict[str, dict] = {}   # sender -> {parsed, shares, total, image_b64, mime}
     last_saved: dict[str, int] = {}
 
+    while True:
+        try:
+            run(group_id, ids, pending, last_saved)
+        except KeyboardInterrupt:
+            raise
+        except Exception:
+            log.exception("Listen loop crashed; reconnecting in 5s")
+            time.sleep(5)
+
+
+def run(group_id: int, ids: dict[str, int], pending: dict[str, dict],
+        last_saved: dict[str, int]) -> None:
     for msg in wa.listen(auto_mark_read=True):
         log.info("incoming type=%s from=%s", msg.type, msg.from_)
         sender = msg.from_
